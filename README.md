@@ -32,10 +32,9 @@
 
 ---
 
-:tada: The **ZED SDK 5.0** is released! 
+:tada: The **ZED SDK 5.1** is released!
 
-ZED SDK 5.0 delivers 5× faster depth sensing, 300% lower compute load on Jetson, and improved depth accuracy in challenging environments. It introduces new depth modes powered by TERRA AI, offering options for higher accuracy and faster depth processing to suit different applications. 
-The update also debuts Magellan™, a vision-based localization system providing centimeter-level positioning indoors and outdoors. Additionally, the capture pipeline architecture has been optimized to improve stability, reduce dropped frames, and lower video latency to under 60ms, delivering one of the lowest latencies in the industry. 
+**ZED SDK 5.1** introduces a fully reworked **image capture** and **recording** pipeline delivering **stability**, **maximum performance**, and **reliability**. It adds **Jetson Thor support**, delivering up to **2.5× higher performance**. An **extra-close depth range** is now supported. **Streaming latency** is significantly reduced, ensuring smoother real-time operation. A redesigned **Virtual Stereo workflow for ZED X One** now achieves up to **60% lower CPU usage**. **OpenCV fisheye calibration** is now supported natively, and the new **ZED Studio** app unifies camera, stream, and SVO management. Improved **Positional Tracking** boosts **robustness**, introduces a **2D mode**, and refines **statuses**. Expanded support for **CUDA 13**, **JetPack 7**, **Python 3.14**, and **C++17/20** makes **ZED SDK 5.1** faster, more stable, and ready for the next generation of robotics and spatial AI.
 
 Please check the [Release Notes](https://www.stereolabs.com/developers/release/) of the latest version for more details.
 
