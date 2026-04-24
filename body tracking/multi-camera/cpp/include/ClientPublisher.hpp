@@ -1,6 +1,8 @@
 #ifndef __SENDER_RUNNER_HDR__
 #define __SENDER_RUNNER_HDR__
 
+#include "AppConfig.hpp"
+
 #include <sl/Camera.hpp>
 #include <sl/Fusion.hpp>
 
@@ -39,7 +41,7 @@ public:
     ClientPublisher();
     ~ClientPublisher();
 
-    bool open(sl::InputType, Trigger* ref, int sdk_gpu_id);
+    bool open(sl::InputType, Trigger* ref, int sdk_gpu_id, const PublisherConfig& config);
     void start();
     void stop();
     void setStartSVOPosition(unsigned pos);
@@ -51,6 +53,7 @@ private:
     int serial;
     std::mutex mtx;
     Trigger* p_trigger;
+    PublisherConfig config_;
 };
 
 #endif // ! __SENDER_RUNNER_HDR__

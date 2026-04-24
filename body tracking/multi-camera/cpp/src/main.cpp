@@ -19,68 +19,13 @@
 ///////////////////////////////////////////////////////////////////////////
 
 // ZED include
+#include "AppConfig.hpp"
 #include "ClientPublisher.hpp"
 #include "GLViewer.hpp"
+#include "OscSender.hpp"
 #include "utils.hpp"
 
 #include <filesystem>
-
-#include <vector>
-
-namespace {
-
-struct CalibrationSearchResult {
-    std::string selected_file;
-    std::vector<std::filesystem::path> searched_roots;
-};
-
-CalibrationSearchResult findLatestCalibrationFile(const std::filesystem::path& executable_path) {
-    namespace fs = std::filesystem;
-
-    CalibrationSearchResult result;
-    auto& search_roots = result.searched_roots;
-
-    const auto executable_dir = executable_path.parent_path();
-    if (!executable_dir.empty()) {
-        search_roots.push_back(executable_dir);
-        if (!executable_dir.parent_path().empty())
-            search_roots.push_back(executable_dir.parent_path());
-        if (!executable_dir.parent_path().parent_path().empty())
-            search_roots.push_back(executable_dir.parent_path().parent_path());
-    }
-
-    bool found = false;
-    fs::path newest_file;
-    fs::file_time_type newest_time;
-
-    for (const auto& root : search_roots) {
-        if (!fs::exists(root) || !fs::is_directory(root))
-            continue;
-
-        for (const auto& entry : fs::directory_iterator(root)) {
-            if (!entry.is_regular_file())
-                continue;
-
-            const auto filename = entry.path().filename().string();
-            if (filename.rfind("calib_", 0) != 0 || entry.path().extension() != ".json")
-                continue;
-
-            const auto write_time = entry.last_write_time();
-            if (!found || write_time > newest_time) {
-                newest_file = entry.path();
-                newest_time = write_time;
-                found = true;
-            }
-        }
-    }
-
-    if (found)
-        result.selected_file = newest_file.string();
-
-    return result;
-}
-
-}
 
 int main(int argc, char** argv) {
 
@@ -90,32 +35,75 @@ int main(int argc, char** argv) {
     const bool isJetson = false;
 #endif
 
-    std::string configuration_file;
+    const auto executable_path = std::filesystem::absolute(argv[0]);
+    AppConfig app_config = makeDefaultAppConfig(isJetson);
+
+    std::string app_config_file;
+    std::filesystem::path app_config_base_dir = executable_path.parent_path();
+    std::string calibration_override;
+
     if (argc >= 2) {
-        configuration_file = argv[1];
-        std::cout << "Using calibration file from command line: " << configuration_file << std::endl;
+        const std::string input_arg = argv[1];
+        if (looksLikeConfigFile(input_arg)) {
+            app_config_file = std::filesystem::absolute(input_arg).string();
+            std::string error;
+            if (!loadAppConfig(app_config_file, app_config, error)) {
+                std::cerr << error << std::endl;
+                return EXIT_FAILURE;
+            }
+            app_config_base_dir = std::filesystem::path(app_config_file).parent_path();
+            std::cout << "Using app config from command line: " << app_config_file << std::endl;
+        } else {
+            calibration_override = std::filesystem::absolute(input_arg).string();
+            std::cout << "Using calibration file from command line: " << calibration_override << std::endl;
+        }
     } else {
-        const auto search_result = findLatestCalibrationFile(std::filesystem::absolute(argv[0]));
-        configuration_file = search_result.selected_file;
-        if (configuration_file.empty()) {
+        const auto config_search = findDefaultAppConfigFile(executable_path);
+        if (!config_search.selected_file.empty()) {
+            app_config_file = config_search.selected_file;
+            std::string error;
+            if (!loadAppConfig(app_config_file, app_config, error)) {
+                std::cerr << error << std::endl;
+                return EXIT_FAILURE;
+            }
+            app_config_base_dir = std::filesystem::path(app_config_file).parent_path();
+            std::cout << "Using app config discovered automatically: " << app_config_file << std::endl;
+            std::cout << "Config search folders:" << std::endl;
+            for (const auto& root : config_search.searched_roots)
+                std::cout << "  - " << root.string() << std::endl;
+        } else {
+            std::cout << "No app config found. Using built-in defaults." << std::endl;
+        }
+    }
+
+    std::string calibration_file;
+    if (!calibration_override.empty()) {
+        calibration_file = calibration_override;
+    } else if (!app_config.calibration_file.empty()) {
+        calibration_file = resolveInputPath(app_config.calibration_file, app_config_base_dir);
+        std::cout << "Using calibration file from app config: " << calibration_file << std::endl;
+    } else {
+        const auto search_result = findLatestCalibrationFile(executable_path);
+        calibration_file = search_result.selected_file;
+        if (calibration_file.empty()) {
             std::cout << "Need a Configuration file in input" << std::endl;
             std::cout << "No calib_*.json file found in these folders:" << std::endl;
             for (const auto& root : search_result.searched_roots)
                 std::cout << "  - " << root.string() << std::endl;
             return 1;
         }
-        std::cout << "Using latest calibration file discovered automatically: " << configuration_file << std::endl;
-        std::cout << "Searched folders:" << std::endl;
+        std::cout << "Using latest calibration file discovered automatically: " << calibration_file << std::endl;
+        std::cout << "Calibration search folders:" << std::endl;
         for (const auto& root : search_result.searched_roots)
             std::cout << "  - " << root.string() << std::endl;
     }
 
     // Defines the Coordinate system and unit used in this sample
-    constexpr sl::COORDINATE_SYSTEM COORDINATE_SYSTEM = sl::COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP;
-    constexpr sl::UNIT UNIT = sl::UNIT::METER;
+    const auto coordinate_system = app_config.fusion.coordinate_system;
+    const auto coordinate_unit = app_config.fusion.coordinate_units;
 
     // Read json file containing the configuration of your multicamera setup.
-    auto configurations = sl::readFusionConfigurationFile(configuration_file.c_str(), COORDINATE_SYSTEM, UNIT);
+    auto configurations = sl::readFusionConfigurationFile(calibration_file.c_str(), coordinate_system, coordinate_unit);
 
     if (configurations.empty()) {
         std::cout << "Empty configuration File." << std::endl;
@@ -138,8 +126,8 @@ int main(int argc, char** argv) {
         // if the ZED camera should run locally, then start a thread to handle it
         if (conf.communication_parameters.getType() == sl::CommunicationParameters::COMM_TYPE::INTRA_PROCESS) {
             std::cout << "Try to open ZED " << conf.serial_number << ".." << std::flush;
-            gpu_id = id_ % nb_gpu;
-            auto state = clients[id_].open(conf.input_type, &trigger, gpu_id);
+            gpu_id = nb_gpu > 0 ? id_ % nb_gpu : 0;
+            auto state = clients[id_].open(conf.input_type, &trigger, gpu_id, app_config.publisher);
             if (!state) {
                 std::cerr << "Could not open ZED: " << conf.input_type.getConfiguration() << ". Skipping..." << std::endl;
                 continue;
@@ -172,10 +160,10 @@ int main(int argc, char** argv) {
 
     // Now that the ZED camera are running, we need to initialize the fusion module
     sl::InitFusionParameters init_params;
-    init_params.coordinate_units = UNIT;
-    init_params.coordinate_system = COORDINATE_SYSTEM;
+    init_params.coordinate_units = coordinate_unit;
+    init_params.coordinate_system = coordinate_system;
 
-    sl::Resolution low_res(512, 360);
+    sl::Resolution low_res(app_config.fusion.working_resolution_width, app_config.fusion.working_resolution_height);
     init_params.maximum_working_resolution = low_res;
     // create and initialize it
     sl::Fusion fusion;
@@ -203,17 +191,26 @@ int main(int argc, char** argv) {
     // as this sample shows how to fuse body detection from the multi camera setup
     // we enable the Body Tracking module with its options
     sl::BodyTrackingFusionParameters body_fusion_init_params;
-    body_fusion_init_params.enable_tracking = true;
-    body_fusion_init_params.enable_body_fitting = !isJetson; // keep a more convincing fused skeleton on desktop
+    body_fusion_init_params.enable_tracking = app_config.fusion.enable_tracking;
+    body_fusion_init_params.enable_body_fitting = app_config.fusion.enable_body_fitting;
     fusion.enableBodyTracking(body_fusion_init_params);
 
     // define fusion behavior
     sl::BodyTrackingFusionRuntimeParameters body_tracking_runtime_parameters;
     // be sure that the detection skeleton is complete enough
-    body_tracking_runtime_parameters.skeleton_minimum_allowed_keypoints = 7;
+    body_tracking_runtime_parameters.skeleton_minimum_allowed_keypoints = app_config.fusion.minimum_keypoints;
     // allow a body seen by a single camera while still letting fusion refine it when multiple views overlap
-    body_tracking_runtime_parameters.skeleton_minimum_allowed_camera = 1;
-    body_tracking_runtime_parameters.skeleton_smoothing = 0.4f;
+    body_tracking_runtime_parameters.skeleton_minimum_allowed_camera = app_config.fusion.minimum_cameras;
+    body_tracking_runtime_parameters.skeleton_smoothing = app_config.fusion.skeleton_smoothing;
+
+    OscSender osc_sender;
+    if (app_config.osc.enabled) {
+        std::string error;
+        if (!osc_sender.initialize(app_config.osc, app_config.publisher.body_format, app_config.verbose_logging, error)) {
+            std::cerr << error << std::endl;
+            return EXIT_FAILURE;
+        }
+    }
 
     // creation of a 3D viewer
     GLViewer viewer;
@@ -243,6 +240,7 @@ int main(int argc, char** argv) {
 
             // Retrieve fused body
             fusion.retrieveBodies(fused_bodies, body_tracking_runtime_parameters);
+            osc_sender.send(fused_bodies);
             // for debug, you can retrieve the data sent by each camera
             for (auto& id : cameras) {
                 fusion.retrieveBodies(camera_raw_data[id], body_tracking_runtime_parameters, id);
@@ -271,6 +269,7 @@ int main(int argc, char** argv) {
     for (auto& it : clients)
         it.stop();
 
+    osc_sender.shutdown();
     fusion.close();
 
     return EXIT_SUCCESS;

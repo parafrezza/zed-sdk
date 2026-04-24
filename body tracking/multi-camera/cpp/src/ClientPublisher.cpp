@@ -6,15 +6,16 @@ ClientPublisher::~ClientPublisher() {
     zed.close();
 }
 
-bool ClientPublisher::open(sl::InputType input, Trigger* ref, int sdk_gpu_id) {
+bool ClientPublisher::open(sl::InputType input, Trigger* ref, int sdk_gpu_id, const PublisherConfig& config) {
 
     p_trigger = ref;
+    config_ = config;
 
     sl::InitParameters init_parameters;
-    init_parameters.depth_mode = sl::DEPTH_MODE::NEURAL;
+    init_parameters.depth_mode = config_.depth_mode;
     init_parameters.input = input;
-    init_parameters.coordinate_units = sl::UNIT::METER;
-    init_parameters.depth_stabilization = 30;
+    init_parameters.coordinate_units = config_.coordinate_units;
+    init_parameters.depth_stabilization = config_.depth_stabilization;
     init_parameters.sdk_gpu_id = sdk_gpu_id;
     auto state = zed.open(init_parameters);
     if (state > sl::ERROR_CODE::SUCCESS) {
@@ -27,8 +28,7 @@ bool ClientPublisher::open(sl::InputType input, Trigger* ref, int sdk_gpu_id) {
 
     // in most cases in body tracking setup, the cameras are static
     sl::PositionalTrackingParameters positional_tracking_parameters;
-    // in most cases for body detection application the camera is static:
-    positional_tracking_parameters.set_as_static = true;
+    positional_tracking_parameters.set_as_static = config_.positional_tracking_static;
 
     state = zed.enablePositionalTracking(positional_tracking_parameters);
     if (state > sl::ERROR_CODE::SUCCESS) {
@@ -39,12 +39,12 @@ bool ClientPublisher::open(sl::InputType input, Trigger* ref, int sdk_gpu_id) {
     // define the body tracking parameters, as the fusion can does the tracking and fitting you don't need to enable them here, unless you
     // need it for your app
     sl::BodyTrackingParameters body_tracking_parameters;
-    body_tracking_parameters.detection_model = sl::BODY_TRACKING_MODEL::HUMAN_BODY_FAST;
-    body_tracking_parameters.body_format = sl::BODY_FORMAT::BODY_18;
-    body_tracking_parameters.enable_body_fitting = false;
-    body_tracking_parameters.enable_tracking = false;
-    body_tracking_parameters.enable_segmentation = false;
-    body_tracking_parameters.allow_reduced_precision_inference = true;
+    body_tracking_parameters.detection_model = config_.detection_model;
+    body_tracking_parameters.body_format = config_.body_format;
+    body_tracking_parameters.enable_body_fitting = config_.enable_body_fitting;
+    body_tracking_parameters.enable_tracking = config_.enable_tracking;
+    body_tracking_parameters.enable_segmentation = config_.enable_segmentation;
+    body_tracking_parameters.allow_reduced_precision_inference = config_.allow_reduced_precision_inference;
     state = zed.enableBodyTracking(body_tracking_parameters);
     if (state > sl::ERROR_CODE::SUCCESS) {
         std::cout << "Error: " << state << std::endl;
@@ -73,12 +73,12 @@ void ClientPublisher::stop() {
 void ClientPublisher::work() {
     sl::Bodies bodies;
     sl::BodyTrackingRuntimeParameters body_runtime_parameters;
-    body_runtime_parameters.detection_confidence_threshold = 40;
-    body_runtime_parameters.skeleton_smoothing = 0.4f;
+    body_runtime_parameters.detection_confidence_threshold = config_.runtime_detection_confidence;
+    body_runtime_parameters.skeleton_smoothing = config_.runtime_skeleton_smoothing;
     zed.setBodyTrackingRuntimeParameters(body_runtime_parameters);
 
     sl::RuntimeParameters rt;
-    rt.confidence_threshold = 50;
+    rt.confidence_threshold = config_.grab_confidence_threshold;
 
     // In this sample we use a dummy thread to process the ZED data.
     // you can replace it by your own application and use the ZED like you use to, retrieve its images, depth, sensors data and so on.
