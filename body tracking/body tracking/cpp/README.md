@@ -10,12 +10,42 @@ This sample shows how to detect and track human bodies in space.
  - Build for [Windows](https://www.stereolabs.com/docs/app-development/cpp/windows/)
  - Build for [Linux/Jetson](https://www.stereolabs.com/docs/app-development/cpp/linux/)
 
+### Windows commands
+
+Open a terminal in this folder and run:
+
+```powershell
+cmake -S . -B build
+cmake --build build --config Release
+```
+
+If you only changed `.cpp` or `.hpp` files and want to recompile after parameter changes, you can usually run just:
+
+```powershell
+cmake --build build --config Release
+```
+
+If you changed `CMakeLists.txt` or want to regenerate the project files, run configure again first:
+
+```powershell
+cmake -S . -B build
+cmake --build build --config Release
+```
+
 ## Run the program
 *NOTE: The ZED v1 is not compatible with this module*
 - Navigate to the build directory and launch the executable
-- Or open a terminal in the build directory and run the sample :
+- Or open a terminal and run the sample directly from this folder:
 
-      ./ZED_Body_Tracking
+```powershell
+.\build\Release\ZED_Body_Tracking_Viewer.exe
+```
+
+- To force a specific camera resolution at startup:
+
+```powershell
+.\build\Release\ZED_Body_Tracking_Viewer.exe HD720
+```
 
 ## Features
  - Display bodies bounding boxes by pressing the `b` key.

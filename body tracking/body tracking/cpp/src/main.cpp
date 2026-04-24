@@ -26,6 +26,9 @@
 // ZED includes
 #include <sl/Camera.hpp>
 
+#include <chrono>
+#include <thread>
+
 // Sample includes
 #include "GLViewer.hpp"
 #include "TrackingViewer.hpp"
@@ -33,6 +36,10 @@
 // Using std and sl namespaces
 using namespace std;
 using namespace sl;
+
+namespace {
+constexpr auto kOpenRetryDelay = std::chrono::seconds(2);
+}
 
 void print(string msg_prefix, ERROR_CODE err_code = ERROR_CODE::SUCCESS, string msg_suffix = "");
 void parseArgs(int argc, char** argv, InitParameters& param);
@@ -55,17 +62,27 @@ int main(int argc, char** argv) {
     parseArgs(argc, argv, init_parameters);
 
     // Open the camera
-    auto returned_state = zed.open(init_parameters);
-    if (returned_state > ERROR_CODE::SUCCESS) {
-        print("Open Camera", returned_state, "\nExit program.");
+    auto returned_state = ERROR_CODE::SUCCESS;
+    int open_attempt = 0;
+    print("Open Camera", ERROR_CODE::SUCCESS, "waiting for the camera stream to become available.");
+    while (true) {
+        ++open_attempt;
+        cout << "[Sample] Open Camera attempt " << open_attempt << endl;
+        returned_state = zed.open(init_parameters);
+        if (returned_state <= ERROR_CODE::SUCCESS)
+            break;
+
+        print("Open Camera", returned_state, "\nAttempt " + to_string(open_attempt) + " failed. Retrying in 2 seconds. Press Ctrl+C to exit.");
         zed.close();
-        return EXIT_FAILURE;
+        std::this_thread::sleep_for(kOpenRetryDelay);
     }
+
+    print("Open Camera", ERROR_CODE::SUCCESS, "stream available after " + to_string(open_attempt) + " attempt(s).");
 
     // Enable Positional tracking (mandatory for object detection)
     PositionalTrackingParameters positional_tracking_parameters;
     // If the camera is static, uncomment the following line to have better performances
-    // positional_tracking_parameters.set_as_static = true;
+    positional_tracking_parameters.set_as_static = true;
 
     returned_state = zed.enablePositionalTracking(positional_tracking_parameters);
     if (returned_state > ERROR_CODE::SUCCESS) {
@@ -76,12 +93,12 @@ int main(int argc, char** argv) {
 
     // Enable the Body tracking module
     BodyTrackingParameters body_tracker_params;
-    body_tracker_params.enable_tracking = true;      // track people across images flow
-    body_tracker_params.enable_body_fitting = false; // smooth skeletons moves
-    body_tracker_params.body_format = sl::BODY_FORMAT::BODY_34;
-    body_tracker_params.enable_segmentation = true;
-    body_tracker_params.detection_model = isJetson ? BODY_TRACKING_MODEL::HUMAN_BODY_FAST : BODY_TRACKING_MODEL::HUMAN_BODY_ACCURATE;
-    // body_tracker_params.allow_reduced_precision_inference = true;
+    body_tracker_params.enable_tracking = true;   // keep persistent IDs across frames
+    body_tracker_params.enable_body_fitting = true; // preserve a more convincing skeleton shape
+    body_tracker_params.body_format = sl::BODY_FORMAT::BODY_18;
+    body_tracker_params.enable_segmentation = false;
+    body_tracker_params.detection_model = BODY_TRACKING_MODEL::HUMAN_BODY_FAST;
+    body_tracker_params.allow_reduced_precision_inference = true;
 
     returned_state = zed.enableBodyTracking(body_tracker_params);
     if (returned_state > ERROR_CODE::SUCCESS) {
@@ -114,7 +131,7 @@ int main(int argc, char** argv) {
     // Configure object detection runtime parameters
     BodyTrackingRuntimeParameters body_tracker_parameters_rt;
     body_tracker_parameters_rt.detection_confidence_threshold = 40;
-    body_tracker_parameters_rt.skeleton_smoothing = 0.7;
+    body_tracker_parameters_rt.skeleton_smoothing = 0.4f;
 
     // Create ZED Bodies filled in the main loop
     Bodies bodies;

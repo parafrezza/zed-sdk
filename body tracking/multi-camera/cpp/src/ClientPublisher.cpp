@@ -39,10 +39,12 @@ bool ClientPublisher::open(sl::InputType input, Trigger* ref, int sdk_gpu_id) {
     // define the body tracking parameters, as the fusion can does the tracking and fitting you don't need to enable them here, unless you
     // need it for your app
     sl::BodyTrackingParameters body_tracking_parameters;
-    body_tracking_parameters.detection_model = sl::BODY_TRACKING_MODEL::HUMAN_BODY_ACCURATE;
+    body_tracking_parameters.detection_model = sl::BODY_TRACKING_MODEL::HUMAN_BODY_FAST;
     body_tracking_parameters.body_format = sl::BODY_FORMAT::BODY_18;
     body_tracking_parameters.enable_body_fitting = false;
     body_tracking_parameters.enable_tracking = false;
+    body_tracking_parameters.enable_segmentation = false;
+    body_tracking_parameters.allow_reduced_precision_inference = true;
     state = zed.enableBodyTracking(body_tracking_parameters);
     if (state > sl::ERROR_CODE::SUCCESS) {
         std::cout << "Error: " << state << std::endl;
@@ -72,6 +74,7 @@ void ClientPublisher::work() {
     sl::Bodies bodies;
     sl::BodyTrackingRuntimeParameters body_runtime_parameters;
     body_runtime_parameters.detection_confidence_threshold = 40;
+    body_runtime_parameters.skeleton_smoothing = 0.4f;
     zed.setBodyTrackingRuntimeParameters(body_runtime_parameters);
 
     sl::RuntimeParameters rt;
