@@ -2,6 +2,28 @@
 
 Questo sample ora supporta una configurazione applicativa separata per i parametri ZED e per l'output OSC verso TouchDesigner.
 
+## Configurazione aggiuntiva
+
+Sezione `fusion`:
+
+- `body_format = 18|34|38` definisce il formato OSC atteso. Se la Fusion restituisce un numero di keypoint diverso, il sender si riallinea automaticamente al formato reale (`zed18`, `zed34`, `zed38`).
+
+Nota sui due `body_format` nel file INI:
+
+- `publisher.body_format` controlla il formato stimato da ogni camera prima della Fusion
+- `fusion.body_format` resta il formato di riferimento lato sample per l'export fuso
+- `osc.output_standard` decide il contratto OSC finale: automatico oppure forzato con remap verso `zed18`, `zed34` o `zed38`
+
+Sezione `preview`:
+
+- `enabled = 0|1` abilita o disabilita completamente la preview OpenGL e il recupero di immagini/point cloud per risparmiare risorse.
+
+Sezione `osc`:
+
+- `output_standard = auto|zed18|zed34|zed38` controlla il formato OSC emesso. `auto` segue il formato reale della Fusion; un valore fisso prova a rimappare i joint verso quello standard prima dell'invio.
+- `log_messages = 0|1` abilita il log dei messaggi OSC inviati
+- `log_file = <path>` definisce il file di log; se vuoto usa `zed_bodyfusion_osc.log` accanto all'eseguibile
+
 ## File di configurazione
 
 Il sample cerca automaticamente `zed_bodyfusion.ini` in questo ordine:
@@ -35,7 +57,18 @@ Standard supportati dal sender:
 - `zed34`
 - `zed38`
 
-Con la configurazione di default il sample emette `zed18`.
+Politica di output:
+
+- `auto`: emette il formato reale disponibile (`zed18`, `zed34`, `zed38`)
+- `zed18`: se la Fusion produce 34 o 38 joint, il sender invia solo il sottoinsieme compatibile a 18 joint
+- `zed34`: se la Fusion produce 38 joint, il sender invia il sottoinsieme compatibile a 34 joint
+- `zed38`: richiede una sorgente gia compatibile a 38 joint
+
+Se il mapping richiesto non e possibile, il body viene scartato e viene scritto un warning nel log verbose.
+
+Quando il remap avviene davvero, il sample scrive anche un log esplicito in console, ad esempio `Remapping fused body from zed34 to zed18`.
+
+Con la configurazione di default il sample usa `output_standard = auto`.
 
 ## Esempio rapido
 

@@ -9,6 +9,13 @@
 #include <sl/Camera.hpp>
 #include <sl/Fusion.hpp>
 
+enum class OscOutputStandard {
+    Auto,
+    Zed18,
+    Zed34,
+    Zed38
+};
+
 struct PublisherConfig {
     sl::DEPTH_MODE depth_mode = sl::DEPTH_MODE::NEURAL;
     sl::UNIT coordinate_units = sl::UNIT::METER;
@@ -28,6 +35,7 @@ struct PublisherConfig {
 struct FusionConfig {
     sl::COORDINATE_SYSTEM coordinate_system = sl::COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP;
     sl::UNIT coordinate_units = sl::UNIT::METER;
+    sl::BODY_FORMAT body_format = sl::BODY_FORMAT::BODY_18;
     int working_resolution_width = 512;
     int working_resolution_height = 360;
     bool enable_tracking = true;
@@ -37,6 +45,10 @@ struct FusionConfig {
     float skeleton_smoothing = 0.4f;
 };
 
+struct PreviewConfig {
+    bool enabled = true;
+};
+
 struct OscConfig {
     bool enabled = true;
     std::string ip = "127.0.0.1";
@@ -44,6 +56,9 @@ struct OscConfig {
     bool use_bundle = true;
     int send_interval_ms = 40;
     bool only_tracked_bodies = true;
+    OscOutputStandard output_standard = OscOutputStandard::Auto;
+    bool log_messages = false;
+    std::string log_file;
 };
 
 struct AppConfig {
@@ -51,6 +66,7 @@ struct AppConfig {
     bool verbose_logging = true;
     PublisherConfig publisher;
     FusionConfig fusion;
+    PreviewConfig preview;
     OscConfig osc;
 };
 

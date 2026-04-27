@@ -108,6 +108,16 @@ bool parseBodyFormat(const std::string& value, sl::BODY_FORMAT& out) {
     return true;
 }
 
+bool parseOscOutputStandard(const std::string& value, OscOutputStandard& out) {
+    const auto lowered = toLower(trim(value));
+    if (lowered == "auto") out = OscOutputStandard::Auto;
+    else if (lowered == "zed18" || lowered == "18" || lowered == "body_18") out = OscOutputStandard::Zed18;
+    else if (lowered == "zed34" || lowered == "34" || lowered == "body_34") out = OscOutputStandard::Zed34;
+    else if (lowered == "zed38" || lowered == "38" || lowered == "body_38") out = OscOutputStandard::Zed38;
+    else return false;
+    return true;
+}
+
 std::vector<std::filesystem::path> searchRootsFromExecutable(const std::filesystem::path& executable_path) {
     std::vector<std::filesystem::path> search_roots;
     const auto executable_dir = executable_path.parent_path();
@@ -160,6 +170,8 @@ bool applyConfigValue(const std::string& section, const std::string& key, const 
         return parseCoordinateSystem(value, config.fusion.coordinate_system);
     if (full_key == "fusion.coordinate_units")
         return parseUnit(value, config.fusion.coordinate_units);
+    if (full_key == "fusion.body_format")
+        return parseBodyFormat(value, config.fusion.body_format);
     if (full_key == "fusion.working_resolution_width")
         return parseInt(value, config.fusion.working_resolution_width);
     if (full_key == "fusion.working_resolution_height")
@@ -174,6 +186,8 @@ bool applyConfigValue(const std::string& section, const std::string& key, const 
         return parseInt(value, config.fusion.minimum_cameras);
     if (full_key == "fusion.skeleton_smoothing")
         return parseFloat(value, config.fusion.skeleton_smoothing);
+    if (full_key == "preview.enabled")
+        return parseBool(value, config.preview.enabled);
     if (full_key == "osc.enabled")
         return parseBool(value, config.osc.enabled);
     if (full_key == "osc.ip") {
@@ -188,6 +202,14 @@ bool applyConfigValue(const std::string& section, const std::string& key, const 
         return parseInt(value, config.osc.send_interval_ms);
     if (full_key == "osc.only_tracked_bodies")
         return parseBool(value, config.osc.only_tracked_bodies);
+    if (full_key == "osc.output_standard")
+        return parseOscOutputStandard(value, config.osc.output_standard);
+    if (full_key == "osc.log_messages")
+        return parseBool(value, config.osc.log_messages);
+    if (full_key == "osc.log_file") {
+        config.osc.log_file = trim(value);
+        return true;
+    }
 
     return true;
 }
@@ -197,6 +219,7 @@ bool applyConfigValue(const std::string& section, const std::string& key, const 
 AppConfig makeDefaultAppConfig(bool isJetson) {
     AppConfig config;
     config.publisher.depth_mode = isJetson ? sl::DEPTH_MODE::NEURAL_LIGHT : sl::DEPTH_MODE::NEURAL;
+    config.fusion.body_format = config.publisher.body_format;
     config.fusion.enable_body_fitting = !isJetson;
     return config;
 }

@@ -4,8 +4,10 @@
 #include "AppConfig.hpp"
 
 #include <chrono>
+#include <fstream>
 #include <string>
 #include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
 #include <sl/Camera.hpp>
@@ -32,11 +34,16 @@ public:
 private:
     bool shouldSendNow();
     bool shouldExportBody(const sl::BodyData& body) const;
+    bool configureActiveFormat(sl::BODY_FORMAT body_format);
+    bool updateFormatFromBody(const sl::BodyData& body);
+    sl::BODY_FORMAT resolveBodyFormatFromKeypointCount(size_t keypoint_count) const;
+    bool buildJointIndexMap(sl::BODY_FORMAT source_format, sl::BODY_FORMAT target_format, std::vector<int>& map) const;
     bool sendAliveMessage(int body_id, int alive_value);
     bool sendBody(const sl::BodyData& body);
-    bool sendBodyBundle(const sl::BodyData& body);
-    bool sendBodyPerJoint(const sl::BodyData& body);
+    bool sendBodyBundle(const sl::BodyData& body, const std::vector<sl::float3>& keypoints);
+    bool sendBodyPerJoint(const sl::BodyData& body, const std::vector<sl::float3>& keypoints);
     bool sendPacket(const uint8_t* data, size_t size);
+    void logOscMessage(const std::string& address, const std::string& payload);
 
     static std::string standardTagForBodyFormat(sl::BODY_FORMAT body_format);
     static std::vector<std::string> jointNamesForBodyFormat(sl::BODY_FORMAT body_format);
@@ -48,19 +55,28 @@ private:
     bool verbose_logging_;
     bool use_bundle_;
     bool only_tracked_bodies_;
+    bool log_messages_;
+    OscOutputStandard output_standard_mode_;
     int send_interval_ms_;
     std::string target_ip_;
     uint16_t target_port_;
+    std::string log_file_;
+    sl::BODY_FORMAT configured_body_format_;
+    sl::BODY_FORMAT active_body_format_;
     std::string standard_tag_;
     std::vector<std::string> joint_names_;
+    std::vector<int> joint_index_map_;
     std::unordered_set<int> previous_body_ids_;
     bool last_send_valid_;
     std::chrono::steady_clock::time_point last_send_time_;
     bool warned_format_mismatch_;
+    std::unordered_set<size_t> warned_unmappable_keypoint_counts_;
+    std::unordered_set<uint32_t> logged_remap_pairs_;
 
     osc_socket_t socket_;
     bool socket_ready_;
     struct sockaddr_in* addr_storage_;
+    std::ofstream log_stream_;
 };
 
 #endif

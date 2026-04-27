@@ -13,8 +13,11 @@
 #endif
 
 #include <array>
+#include <iomanip>
 #include <cstring>
 #include <iostream>
+#include <sstream>
+#include <algorithm>
 #include <unordered_set>
 
 namespace {
@@ -81,8 +84,12 @@ OscSender::OscSender()
     , verbose_logging_(false)
     , use_bundle_(true)
     , only_tracked_bodies_(true)
+    , log_messages_(false)
+    , output_standard_mode_(OscOutputStandard::Auto)
     , send_interval_ms_(0)
     , target_port_(0)
+    , configured_body_format_(sl::BODY_FORMAT::BODY_18)
+    , active_body_format_(sl::BODY_FORMAT::BODY_18)
     , last_send_valid_(false)
     , warned_format_mismatch_(false)
     , socket_(kInvalidSocket)
@@ -102,9 +109,10 @@ bool OscSender::initialize(const OscConfig& config, sl::BODY_FORMAT body_format,
     if (!ensureSocketLayer(error))
         return false;
 
-    joint_names_ = jointNamesForBodyFormat(body_format);
-    standard_tag_ = standardTagForBodyFormat(body_format);
-    if (joint_names_.empty()) {
+    configured_body_format_ = body_format;
+    active_body_format_ = body_format;
+    output_standard_mode_ = config.output_standard;
+    if (!configureActiveFormat(body_format)) {
         error = "Unsupported body format for OSC export";
         return false;
     }
@@ -133,13 +141,32 @@ bool OscSender::initialize(const OscConfig& config, sl::BODY_FORMAT body_format,
     verbose_logging_ = verbose_logging;
     use_bundle_ = config.use_bundle;
     only_tracked_bodies_ = config.only_tracked_bodies;
+    log_messages_ = config.log_messages;
+    output_standard_mode_ = config.output_standard;
     send_interval_ms_ = std::max(0, config.send_interval_ms);
     target_ip_ = config.ip;
     target_port_ = config.port;
+    log_file_ = config.log_file;
+
+    if (log_messages_) {
+        if (log_file_.empty())
+            log_file_ = "zed_bodyfusion_osc.log";
+        log_stream_.open(log_file_, std::ios::out | std::ios::trunc);
+        if (!log_stream_.is_open()) {
+            error = "Unable to open OSC log file: " + log_file_;
+            shutdown();
+            return false;
+        }
+        log_stream_ << "# ZED Body Fusion OSC log\n";
+        log_stream_ << "# target=" << target_ip_ << ":" << target_port_ << " standard=" << standard_tag_ << "\n";
+        log_stream_.flush();
+    }
 
     if (verbose_logging_) {
         std::cout << "[OSC] Target " << target_ip_ << ":" << target_port_ << " | standard=" << standard_tag_
                   << " | interval_ms=" << send_interval_ms_ << std::endl;
+        if (log_messages_)
+            std::cout << "[OSC] Logging messages to " << log_file_ << std::endl;
     }
 
     return true;
@@ -175,6 +202,93 @@ bool OscSender::shouldExportBody(const sl::BodyData& body) const {
     return body.tracking_state == sl::OBJECT_TRACKING_STATE::OK;
 }
 
+bool OscSender::configureActiveFormat(sl::BODY_FORMAT body_format) {
+    joint_names_ = jointNamesForBodyFormat(body_format);
+    standard_tag_ = standardTagForBodyFormat(body_format);
+    active_body_format_ = body_format;
+    joint_index_map_.resize(joint_names_.size());
+    for (size_t index = 0; index < joint_index_map_.size(); ++index)
+        joint_index_map_[index] = static_cast<int>(index);
+    return !joint_names_.empty() && !standard_tag_.empty();
+}
+
+sl::BODY_FORMAT OscSender::resolveBodyFormatFromKeypointCount(size_t keypoint_count) const {
+    switch (keypoint_count) {
+        case 18:
+            return sl::BODY_FORMAT::BODY_18;
+        case 34:
+            return sl::BODY_FORMAT::BODY_34;
+        case 38:
+            return sl::BODY_FORMAT::BODY_38;
+        default:
+            return static_cast<sl::BODY_FORMAT>(-1);
+    }
+}
+
+bool OscSender::buildJointIndexMap(sl::BODY_FORMAT source_format, sl::BODY_FORMAT target_format, std::vector<int>& map) const {
+    const auto source_names = jointNamesForBodyFormat(source_format);
+    const auto target_names = jointNamesForBodyFormat(target_format);
+    if (source_names.empty() || target_names.empty())
+        return false;
+
+    std::unordered_map<std::string, int> source_indices;
+    for (size_t index = 0; index < source_names.size(); ++index)
+        source_indices[source_names[index]] = static_cast<int>(index);
+
+    map.clear();
+    map.reserve(target_names.size());
+    for (const auto& target_name : target_names) {
+        const auto it = source_indices.find(target_name);
+        if (it == source_indices.end())
+            return false;
+        map.push_back(it->second);
+    }
+    return true;
+}
+
+bool OscSender::updateFormatFromBody(const sl::BodyData& body) {
+    const auto detected_format = resolveBodyFormatFromKeypointCount(body.keypoint.size());
+    if (static_cast<int>(detected_format) == -1)
+        return false;
+
+    sl::BODY_FORMAT target_format = detected_format;
+    if (output_standard_mode_ == OscOutputStandard::Zed18)
+        target_format = sl::BODY_FORMAT::BODY_18;
+    else if (output_standard_mode_ == OscOutputStandard::Zed34)
+        target_format = sl::BODY_FORMAT::BODY_34;
+    else if (output_standard_mode_ == OscOutputStandard::Zed38)
+        target_format = sl::BODY_FORMAT::BODY_38;
+
+    if (detected_format != target_format && verbose_logging_) {
+        const auto remap_key = (static_cast<uint32_t>(detected_format) << 16) | static_cast<uint32_t>(target_format);
+        if (logged_remap_pairs_.insert(remap_key).second) {
+            std::cout << "[OSC] Remapping fused body from " << standardTagForBodyFormat(detected_format)
+                      << " to " << standardTagForBodyFormat(target_format) << std::endl;
+        }
+    }
+
+    std::vector<int> candidate_map;
+    if (!buildJointIndexMap(detected_format, target_format, candidate_map)) {
+        if (warned_unmappable_keypoint_counts_.insert(body.keypoint.size()).second && verbose_logging_) {
+            std::cerr << "[OSC] Cannot map body with " << body.keypoint.size() << " keypoints to standard "
+                      << standardTagForBodyFormat(target_format) << std::endl;
+        }
+        return false;
+    }
+
+    if (active_body_format_ != target_format) {
+        if (verbose_logging_) {
+            std::cout << "[OSC] Using output standard " << standardTagForBodyFormat(target_format)
+                      << " for body source with " << body.keypoint.size() << " keypoints" << std::endl;
+        }
+        configureActiveFormat(target_format);
+    }
+
+    joint_index_map_ = std::move(candidate_map);
+    warned_format_mismatch_ = false;
+    return true;
+}
+
 bool OscSender::send(const sl::Bodies& bodies) {
     if (!enabled_ || !socket_ready_)
         return true;
@@ -185,14 +299,15 @@ bool OscSender::send(const sl::Bodies& bodies) {
     for (const auto& body : bodies.body_list) {
         if (!shouldExportBody(body))
             continue;
-        if (body.keypoint.size() != joint_names_.size()) {
+        if (!updateFormatFromBody(body)) {
             if (verbose_logging_ && !warned_format_mismatch_) {
                 std::cerr << "[OSC] Skipping body with unexpected keypoint count: " << body.keypoint.size()
-                          << " for standard " << standard_tag_ << std::endl;
+                          << " for configured export standard " << standard_tag_ << std::endl;
                 warned_format_mismatch_ = true;
             }
             continue;
         }
+
         current_ids.insert(body.id);
         sendBody(body);
     }
@@ -221,9 +336,12 @@ void OscSender::shutdown() {
         delete reinterpret_cast<SocketAddressStorage*>(addr_storage_);
         addr_storage_ = nullptr;
     }
+    if (log_stream_.is_open())
+        log_stream_.close();
 }
 
 bool OscSender::sendAliveMessage(int body_id, int alive_value) {
+    logOscMessage("/skeleton/" + std::to_string(body_id) + "/" + standard_tag_ + "/alive", std::to_string(alive_value));
     std::array<uint8_t, 128> buffer {};
     size_t offset = 0;
     offset = writePaddedString(buffer.data(), offset, "/skeleton/" + std::to_string(body_id) + "/" + standard_tag_ + "/alive");
@@ -234,10 +352,17 @@ bool OscSender::sendAliveMessage(int body_id, int alive_value) {
 }
 
 bool OscSender::sendBody(const sl::BodyData& body) {
-    return use_bundle_ ? sendBodyBundle(body) : sendBodyPerJoint(body);
+    std::vector<sl::float3> keypoints;
+    keypoints.reserve(joint_index_map_.size());
+    for (const auto source_index : joint_index_map_) {
+        if (source_index < 0 || static_cast<size_t>(source_index) >= body.keypoint.size())
+            return false;
+        keypoints.push_back(body.keypoint[source_index]);
+    }
+    return use_bundle_ ? sendBodyBundle(body, keypoints) : sendBodyPerJoint(body, keypoints);
 }
 
-bool OscSender::sendBodyBundle(const sl::BodyData& body) {
+bool OscSender::sendBodyBundle(const sl::BodyData& body, const std::vector<sl::float3>& keypoints) {
     const size_t max_message_size = 160;
     const size_t buffer_size = 16 + (joint_names_.size() + 1) * (4 + max_message_size);
     std::vector<uint8_t> buffer(buffer_size, 0);
@@ -258,15 +383,19 @@ bool OscSender::sendBodyBundle(const sl::BodyData& body) {
     offset += message_offset;
 
     for (size_t index = 0; index < joint_names_.size(); ++index) {
+        std::ostringstream payload;
+        payload << std::fixed << std::setprecision(6)
+            << keypoints[index].x << ' ' << keypoints[index].y << ' ' << keypoints[index].z;
+        logOscMessage("/skeleton/" + std::to_string(body.id) + "/" + standard_tag_ + "/" + joint_names_[index] + "/", payload.str());
         message.fill(0);
         message_offset = 0;
         message_offset = writePaddedString(message.data(), message_offset, "/skeleton/" + std::to_string(body.id) + "/" + standard_tag_ + "/" + joint_names_[index] + "/");
         message_offset = writePaddedString(message.data(), message_offset, ",fff");
-        writeFloatBE(message.data() + message_offset, body.keypoint[index].x);
+        writeFloatBE(message.data() + message_offset, keypoints[index].x);
         message_offset += 4;
-        writeFloatBE(message.data() + message_offset, body.keypoint[index].y);
+        writeFloatBE(message.data() + message_offset, keypoints[index].y);
         message_offset += 4;
-        writeFloatBE(message.data() + message_offset, body.keypoint[index].z);
+        writeFloatBE(message.data() + message_offset, keypoints[index].z);
         message_offset += 4;
         writeUint32BE(buffer.data() + offset, static_cast<uint32_t>(message_offset));
         offset += 4;
@@ -277,20 +406,24 @@ bool OscSender::sendBodyBundle(const sl::BodyData& body) {
     return sendPacket(buffer.data(), offset);
 }
 
-bool OscSender::sendBodyPerJoint(const sl::BodyData& body) {
+bool OscSender::sendBodyPerJoint(const sl::BodyData& body, const std::vector<sl::float3>& keypoints) {
     if (!sendAliveMessage(body.id, 1))
         return false;
 
     std::array<uint8_t, 160> buffer {};
     for (size_t index = 0; index < joint_names_.size(); ++index) {
+        std::ostringstream payload;
+        payload << std::fixed << std::setprecision(6)
+            << keypoints[index].x << ' ' << keypoints[index].y << ' ' << keypoints[index].z;
+        logOscMessage("/skeleton/" + std::to_string(body.id) + "/" + standard_tag_ + "/" + joint_names_[index] + "/", payload.str());
         size_t offset = 0;
         offset = writePaddedString(buffer.data(), offset, "/skeleton/" + std::to_string(body.id) + "/" + standard_tag_ + "/" + joint_names_[index] + "/");
         offset = writePaddedString(buffer.data(), offset, ",fff");
-        writeFloatBE(buffer.data() + offset, body.keypoint[index].x);
+        writeFloatBE(buffer.data() + offset, keypoints[index].x);
         offset += 4;
-        writeFloatBE(buffer.data() + offset, body.keypoint[index].y);
+        writeFloatBE(buffer.data() + offset, keypoints[index].y);
         offset += 4;
-        writeFloatBE(buffer.data() + offset, body.keypoint[index].z);
+        writeFloatBE(buffer.data() + offset, keypoints[index].z);
         offset += 4;
         if (!sendPacket(buffer.data(), offset))
             return false;
@@ -307,6 +440,19 @@ bool OscSender::sendPacket(const uint8_t* data, size_t size) {
     if (sent < 0 && verbose_logging_)
         std::cerr << "[OSC] sendto failed" << std::endl;
     return sent >= 0;
+}
+
+void OscSender::logOscMessage(const std::string& address, const std::string& payload) {
+    if (!log_messages_ || !log_stream_.is_open())
+        return;
+
+    const auto now = std::chrono::system_clock::now();
+    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    log_stream_ << now_ms << ' ' << address;
+    if (!payload.empty())
+        log_stream_ << ' ' << payload;
+    log_stream_ << '\n';
+    log_stream_.flush();
 }
 
 std::string OscSender::standardTagForBodyFormat(sl::BODY_FORMAT body_format) {

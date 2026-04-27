@@ -205,8 +205,13 @@ int main(int argc, char** argv) {
 
     OscSender osc_sender;
     if (app_config.osc.enabled) {
+        if (app_config.osc.log_messages && app_config.osc.log_file.empty())
+            app_config.osc.log_file = (executable_path.parent_path() / "zed_bodyfusion_osc.log").string();
+        else if (!app_config.osc.log_file.empty())
+            app_config.osc.log_file = resolveInputPath(app_config.osc.log_file, app_config_base_dir);
+
         std::string error;
-        if (!osc_sender.initialize(app_config.osc, app_config.publisher.body_format, app_config.verbose_logging, error)) {
+        if (!osc_sender.initialize(app_config.osc, app_config.fusion.body_format, app_config.verbose_logging, error)) {
             std::cerr << error << std::endl;
             return EXIT_FAILURE;
         }
@@ -214,14 +219,18 @@ int main(int argc, char** argv) {
 
     // creation of a 3D viewer
     GLViewer viewer;
-    viewer.init(argc, argv);
+    if (app_config.preview.enabled) {
+        viewer.init(argc, argv);
 
-    std::cout << "Viewer Shortcuts\n"
-              << "\t- 'q': quit the application\n"
-              << "\t- 'r': switch on/off for raw skeleton display\n"
-              << "\t- 'p': switch on/off for live point cloud display\n"
-              << "\t- 'c': switch on/off point cloud display with raw color\n"
-              << std::endl;
+        std::cout << "Viewer Shortcuts\n"
+                  << "\t- 'q': quit the application\n"
+                  << "\t- 'r': switch on/off for raw skeleton display\n"
+                  << "\t- 'p': switch on/off for live point cloud display\n"
+                  << "\t- 'c': switch on/off point cloud display with raw color\n"
+                  << std::endl;
+    } else {
+        std::cout << "Preview disabled. Running headless. Press Ctrl+C to exit.\n" << std::endl;
+    }
 
     // fusion outputs
     sl::Bodies fused_bodies;
@@ -232,7 +241,7 @@ int main(int argc, char** argv) {
     sl::CameraIdentifier fused_camera(0);
 
     // run the fusion as long as the viewer is available.
-    while (viewer.isAvailable()) {
+    while (!app_config.preview.enabled || viewer.isAvailable()) {
         trigger.notifyZED();
 
         // run the fusion process (which gather data from all camera, sync them and process them)
@@ -242,25 +251,28 @@ int main(int argc, char** argv) {
             fusion.retrieveBodies(fused_bodies, body_tracking_runtime_parameters);
             osc_sender.send(fused_bodies);
             // for debug, you can retrieve the data sent by each camera
-            for (auto& id : cameras) {
-                fusion.retrieveBodies(camera_raw_data[id], body_tracking_runtime_parameters, id);
+            if (app_config.preview.enabled) {
+                for (auto& id : cameras) {
+                    fusion.retrieveBodies(camera_raw_data[id], body_tracking_runtime_parameters, id);
 
-                auto state_view = fusion.retrieveImage(views[id], id, low_res);
-                auto state_pc = fusion.retrieveMeasure(pointClouds[id], id, sl::MEASURE::XYZBGRA, low_res);
+                    auto state_view = fusion.retrieveImage(views[id], id, low_res);
+                    auto state_pc = fusion.retrieveMeasure(pointClouds[id], id, sl::MEASURE::XYZBGRA, low_res);
 
-                if (state_view == sl::FUSION_ERROR_CODE::SUCCESS && state_pc == sl::FUSION_ERROR_CODE::SUCCESS)
-                    viewer.updateCamera(id.sn, views[id], pointClouds[id]);
+                    if (state_view == sl::FUSION_ERROR_CODE::SUCCESS && state_pc == sl::FUSION_ERROR_CODE::SUCCESS)
+                        viewer.updateCamera(id.sn, views[id], pointClouds[id]);
 
-                sl::Pose pose;
-                if (fusion.getPosition(pose, sl::REFERENCE_FRAME::WORLD, id, sl::POSITION_TYPE::RAW) == sl::POSITIONAL_TRACKING_STATE::OK)
-                    viewer.setCameraPose(id.sn, pose.pose_data);
+                    sl::Pose pose;
+                    if (fusion.getPosition(pose, sl::REFERENCE_FRAME::WORLD, id, sl::POSITION_TYPE::RAW) == sl::POSITIONAL_TRACKING_STATE::OK)
+                        viewer.setCameraPose(id.sn, pose.pose_data);
+                }
             }
 
             // get metrics about the fusion process for monitoring purposes
             fusion.getProcessMetrics(metrics);
         }
         // update the 3D view
-        viewer.updateBodies(fused_bodies, camera_raw_data, metrics);
+        if (app_config.preview.enabled)
+            viewer.updateBodies(fused_bodies, camera_raw_data, metrics);
     }
 
     trigger.running = false;
