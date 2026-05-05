@@ -44,12 +44,18 @@ Puoi anche avviare il sample con:
 L'export OSC usa il namespace:
 
 - `/skeleton/<id>/<standard>/alive`
+- `/skeleton/<id>/<standard>/id`
 - `/skeleton/<id>/<standard>/<joint_name>/`
 
 Argomenti:
 
 - `alive`: un intero (`1` presente, `0` scomparso)
+- `id`: un intero con il tracking ID ZED del body
 - `joint_name`: tre float `x y z` in world space ZED/Fusion
+
+Con `BODY_18` e `osc.output_standard = zed18`, ogni body produce sempre 20 messaggi/entry logiche: 18 joint, 1 `alive`, 1 `id`.
+
+Quando un body scompare, il sender riemette l'ultimo set di joint noto per quell'ID insieme a `alive = 0` e `id`, cosi il frame di uscita resta coerente con lo stesso conteggio di 20.
 
 Standard supportati dal sender:
 
@@ -77,3 +83,24 @@ cmake -S . -B build
 cmake --build build --config Release
 .\build\Release\ZED_BodyFusion.exe
 ```
+
+## Mappatura zed18
+
+- `0`: `nose`
+- `1`: `neck`
+- `2`: `right_shoulder`
+- `3`: `right_elbow`
+- `4`: `right_wrist`
+- `5`: `left_shoulder`
+- `6`: `left_elbow`
+- `7`: `left_wrist`
+- `8`: `right_hip`
+- `9`: `right_knee`
+- `10`: `right_ankle`
+- `11`: `left_hip`
+- `12`: `left_knee`
+- `13`: `left_ankle`
+- `14`: `right_eye`
+- `15`: `left_eye`
+- `16`: `right_ear`
+- `17`: `left_ear`

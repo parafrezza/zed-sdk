@@ -313,19 +313,47 @@ bool OscSender::send(const sl::Bodies& bodies) {
     }
 
     for (const auto& previous_id : previous_body_ids_) {
-        if (current_ids.find(previous_id) == current_ids.end())
+        if (current_ids.find(previous_id) != current_ids.end())
+            continue;
+
+        const auto cached_it = cached_body_states_.find(previous_id);
+        if (cached_it != cached_body_states_.end()) {
+            sendCachedBodyState(previous_id, cached_it->second, 0);
+            cached_body_states_.erase(cached_it);
+        } else {
             sendAliveMessage(previous_id, 0);
+            sendIdMessage(previous_id);
+        }
     }
     previous_body_ids_ = std::move(current_ids);
     return true;
 }
 
+bool OscSender::sendIntMessage(const std::string& address, int value) {
+    logOscMessage(address, std::to_string(value));
+    std::array<uint8_t, 128> buffer {};
+    size_t offset = 0;
+    offset = writePaddedString(buffer.data(), offset, address);
+    offset = writePaddedString(buffer.data(), offset, ",i");
+    writeUint32BE(buffer.data() + offset, static_cast<uint32_t>(value));
+    offset += 4;
+    return sendPacket(buffer.data(), offset);
+}
+
 void OscSender::shutdown() {
     if (enabled_ && socket_ready_) {
-        for (const auto& body_id : previous_body_ids_)
-            sendAliveMessage(body_id, 0);
+        for (const auto& body_id : previous_body_ids_) {
+            const auto cached_it = cached_body_states_.find(body_id);
+            if (cached_it != cached_body_states_.end())
+                sendCachedBodyState(body_id, cached_it->second, 0);
+            else {
+                sendAliveMessage(body_id, 0);
+                sendIdMessage(body_id);
+            }
+        }
     }
     previous_body_ids_.clear();
+    cached_body_states_.clear();
     if (socket_ != kInvalidSocket) {
         closeSocket(socket_);
         socket_ = kInvalidSocket;
@@ -341,14 +369,17 @@ void OscSender::shutdown() {
 }
 
 bool OscSender::sendAliveMessage(int body_id, int alive_value) {
-    logOscMessage("/skeleton/" + std::to_string(body_id) + "/" + standard_tag_ + "/alive", std::to_string(alive_value));
-    std::array<uint8_t, 128> buffer {};
-    size_t offset = 0;
-    offset = writePaddedString(buffer.data(), offset, "/skeleton/" + std::to_string(body_id) + "/" + standard_tag_ + "/alive");
-    offset = writePaddedString(buffer.data(), offset, ",i");
-    writeUint32BE(buffer.data() + offset, static_cast<uint32_t>(alive_value));
-    offset += 4;
-    return sendPacket(buffer.data(), offset);
+    return sendIntMessage("/skeleton/" + std::to_string(body_id) + "/" + standard_tag_ + "/alive", alive_value);
+}
+
+bool OscSender::sendIdMessage(int body_id) {
+    return sendIntMessage("/skeleton/" + std::to_string(body_id) + "/" + standard_tag_ + "/id", body_id);
+}
+
+bool OscSender::sendCachedBodyState(int body_id, const CachedBodyState& body_state, int alive_value) {
+    return use_bundle_
+        ? sendBodyBundle(body_id, alive_value, body_state.standard_tag, body_state.joint_names, body_state.keypoints)
+        : sendBodyPerJoint(body_id, alive_value, body_state.standard_tag, body_state.joint_names, body_state.keypoints);
 }
 
 bool OscSender::sendBody(const sl::BodyData& body) {
@@ -359,12 +390,17 @@ bool OscSender::sendBody(const sl::BodyData& body) {
             return false;
         keypoints.push_back(body.keypoint[source_index]);
     }
-    return use_bundle_ ? sendBodyBundle(body, keypoints) : sendBodyPerJoint(body, keypoints);
+
+    cached_body_states_[body.id] = CachedBodyState {standard_tag_, joint_names_, keypoints};
+
+    return use_bundle_
+        ? sendBodyBundle(body.id, 1, standard_tag_, joint_names_, keypoints)
+        : sendBodyPerJoint(body.id, 1, standard_tag_, joint_names_, keypoints);
 }
 
-bool OscSender::sendBodyBundle(const sl::BodyData& body, const std::vector<sl::float3>& keypoints) {
+bool OscSender::sendBodyBundle(int body_id, int alive_value, const std::string& standard_tag, const std::vector<std::string>& joint_names, const std::vector<sl::float3>& keypoints) {
     const size_t max_message_size = 160;
-    const size_t buffer_size = 16 + (joint_names_.size() + 1) * (4 + max_message_size);
+    const size_t buffer_size = 16 + (joint_names.size() + 2) * (4 + max_message_size);
     std::vector<uint8_t> buffer(buffer_size, 0);
 
     size_t offset = 0;
@@ -373,23 +409,34 @@ bool OscSender::sendBodyBundle(const sl::BodyData& body, const std::vector<sl::f
 
     std::array<uint8_t, max_message_size> message {};
     size_t message_offset = 0;
-    message_offset = writePaddedString(message.data(), message_offset, "/skeleton/" + std::to_string(body.id) + "/" + standard_tag_ + "/alive");
+    message_offset = writePaddedString(message.data(), message_offset, "/skeleton/" + std::to_string(body_id) + "/" + standard_tag + "/alive");
     message_offset = writePaddedString(message.data(), message_offset, ",i");
-    writeUint32BE(message.data() + message_offset, 1);
+    writeUint32BE(message.data() + message_offset, static_cast<uint32_t>(alive_value));
     message_offset += 4;
     writeUint32BE(buffer.data() + offset, static_cast<uint32_t>(message_offset));
     offset += 4;
     std::memcpy(buffer.data() + offset, message.data(), message_offset);
     offset += message_offset;
 
-    for (size_t index = 0; index < joint_names_.size(); ++index) {
+    message.fill(0);
+    message_offset = 0;
+    message_offset = writePaddedString(message.data(), message_offset, "/skeleton/" + std::to_string(body_id) + "/" + standard_tag + "/id");
+    message_offset = writePaddedString(message.data(), message_offset, ",i");
+    writeUint32BE(message.data() + message_offset, static_cast<uint32_t>(body_id));
+    message_offset += 4;
+    writeUint32BE(buffer.data() + offset, static_cast<uint32_t>(message_offset));
+    offset += 4;
+    std::memcpy(buffer.data() + offset, message.data(), message_offset);
+    offset += message_offset;
+
+    for (size_t index = 0; index < joint_names.size(); ++index) {
         std::ostringstream payload;
         payload << std::fixed << std::setprecision(6)
             << keypoints[index].x << ' ' << keypoints[index].y << ' ' << keypoints[index].z;
-        logOscMessage("/skeleton/" + std::to_string(body.id) + "/" + standard_tag_ + "/" + joint_names_[index] + "/", payload.str());
+        logOscMessage("/skeleton/" + std::to_string(body_id) + "/" + standard_tag + "/" + joint_names[index] + "/", payload.str());
         message.fill(0);
         message_offset = 0;
-        message_offset = writePaddedString(message.data(), message_offset, "/skeleton/" + std::to_string(body.id) + "/" + standard_tag_ + "/" + joint_names_[index] + "/");
+        message_offset = writePaddedString(message.data(), message_offset, "/skeleton/" + std::to_string(body_id) + "/" + standard_tag + "/" + joint_names[index] + "/");
         message_offset = writePaddedString(message.data(), message_offset, ",fff");
         writeFloatBE(message.data() + message_offset, keypoints[index].x);
         message_offset += 4;
@@ -406,18 +453,20 @@ bool OscSender::sendBodyBundle(const sl::BodyData& body, const std::vector<sl::f
     return sendPacket(buffer.data(), offset);
 }
 
-bool OscSender::sendBodyPerJoint(const sl::BodyData& body, const std::vector<sl::float3>& keypoints) {
-    if (!sendAliveMessage(body.id, 1))
+bool OscSender::sendBodyPerJoint(int body_id, int alive_value, const std::string& standard_tag, const std::vector<std::string>& joint_names, const std::vector<sl::float3>& keypoints) {
+    if (!sendIntMessage("/skeleton/" + std::to_string(body_id) + "/" + standard_tag + "/alive", alive_value))
+        return false;
+    if (!sendIntMessage("/skeleton/" + std::to_string(body_id) + "/" + standard_tag + "/id", body_id))
         return false;
 
     std::array<uint8_t, 160> buffer {};
-    for (size_t index = 0; index < joint_names_.size(); ++index) {
+    for (size_t index = 0; index < joint_names.size(); ++index) {
         std::ostringstream payload;
         payload << std::fixed << std::setprecision(6)
             << keypoints[index].x << ' ' << keypoints[index].y << ' ' << keypoints[index].z;
-        logOscMessage("/skeleton/" + std::to_string(body.id) + "/" + standard_tag_ + "/" + joint_names_[index] + "/", payload.str());
+        logOscMessage("/skeleton/" + std::to_string(body_id) + "/" + standard_tag + "/" + joint_names[index] + "/", payload.str());
         size_t offset = 0;
-        offset = writePaddedString(buffer.data(), offset, "/skeleton/" + std::to_string(body.id) + "/" + standard_tag_ + "/" + joint_names_[index] + "/");
+        offset = writePaddedString(buffer.data(), offset, "/skeleton/" + std::to_string(body_id) + "/" + standard_tag + "/" + joint_names[index] + "/");
         offset = writePaddedString(buffer.data(), offset, ",fff");
         writeFloatBE(buffer.data() + offset, keypoints[index].x);
         offset += 4;

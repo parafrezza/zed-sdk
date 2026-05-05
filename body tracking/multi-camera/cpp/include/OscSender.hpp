@@ -38,10 +38,19 @@ private:
     bool updateFormatFromBody(const sl::BodyData& body);
     sl::BODY_FORMAT resolveBodyFormatFromKeypointCount(size_t keypoint_count) const;
     bool buildJointIndexMap(sl::BODY_FORMAT source_format, sl::BODY_FORMAT target_format, std::vector<int>& map) const;
+    struct CachedBodyState {
+        std::string standard_tag;
+        std::vector<std::string> joint_names;
+        std::vector<sl::float3> keypoints;
+    };
+
+    bool sendIntMessage(const std::string& address, int value);
     bool sendAliveMessage(int body_id, int alive_value);
+    bool sendIdMessage(int body_id);
+    bool sendCachedBodyState(int body_id, const CachedBodyState& body_state, int alive_value);
     bool sendBody(const sl::BodyData& body);
-    bool sendBodyBundle(const sl::BodyData& body, const std::vector<sl::float3>& keypoints);
-    bool sendBodyPerJoint(const sl::BodyData& body, const std::vector<sl::float3>& keypoints);
+    bool sendBodyBundle(int body_id, int alive_value, const std::string& standard_tag, const std::vector<std::string>& joint_names, const std::vector<sl::float3>& keypoints);
+    bool sendBodyPerJoint(int body_id, int alive_value, const std::string& standard_tag, const std::vector<std::string>& joint_names, const std::vector<sl::float3>& keypoints);
     bool sendPacket(const uint8_t* data, size_t size);
     void logOscMessage(const std::string& address, const std::string& payload);
 
@@ -67,6 +76,7 @@ private:
     std::vector<std::string> joint_names_;
     std::vector<int> joint_index_map_;
     std::unordered_set<int> previous_body_ids_;
+    std::unordered_map<int, CachedBodyState> cached_body_states_;
     bool last_send_valid_;
     std::chrono::steady_clock::time_point last_send_time_;
     bool warned_format_mismatch_;

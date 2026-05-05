@@ -52,3 +52,24 @@ cmake --build build --config Release
 
 ## Support
 If you need assistance go to our Community site at https://community.stereolabs.com/
+
+## Zed18 Mapping
+
+- `0`: `nose`
+- `1`: `neck`
+- `2`: `right_shoulder`
+- `3`: `right_elbow`
+- `4`: `right_wrist`
+- `5`: `left_shoulder`
+- `6`: `left_elbow`
+- `7`: `left_wrist`
+- `8`: `right_hip`
+- `9`: `right_knee`
+- `10`: `right_ankle`
+- `11`: `left_hip`
+- `12`: `left_knee`
+- `13`: `left_ankle`
+- `14`: `right_eye`
+- `15`: `left_eye`
+- `16`: `right_ear`
+- `17`: `left_ear`
