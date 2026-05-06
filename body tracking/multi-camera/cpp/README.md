@@ -44,18 +44,16 @@ Puoi anche avviare il sample con:
 L'export OSC usa il namespace:
 
 - `/skeleton/<id>/<standard>/alive`
-- `/skeleton/<id>/<standard>/id`
 - `/skeleton/<id>/<standard>/<joint_name>/`
 
 Argomenti:
 
 - `alive`: un intero (`1` presente, `0` scomparso)
-- `id`: un intero con il tracking ID ZED del body
 - `joint_name`: tre float `x y z` in world space ZED/Fusion
 
-Con `BODY_18` e `osc.output_standard = zed18`, ogni body produce sempre 20 messaggi/entry logiche: 18 joint, 1 `alive`, 1 `id`.
+Con `BODY_18` e `osc.output_standard = zed18`, ogni body produce sempre 19 messaggi/entry logiche: 18 joint e 1 `alive`.
 
-Quando un body scompare, il sender riemette l'ultimo set di joint noto per quell'ID insieme a `alive = 0` e `id`, cosi il frame di uscita resta coerente con lo stesso conteggio di 20.
+Quando un body scompare, il sender riemette l'ultimo set di joint noto per quell'ID insieme a `alive = 0`, cosi il frame di uscita resta coerente con lo stesso conteggio di 19.
 
 Standard supportati dal sender:
 

@@ -322,7 +322,6 @@ bool OscSender::send(const sl::Bodies& bodies) {
             cached_body_states_.erase(cached_it);
         } else {
             sendAliveMessage(previous_id, 0);
-            sendIdMessage(previous_id);
         }
     }
     previous_body_ids_ = std::move(current_ids);
@@ -348,7 +347,6 @@ void OscSender::shutdown() {
                 sendCachedBodyState(body_id, cached_it->second, 0);
             else {
                 sendAliveMessage(body_id, 0);
-                sendIdMessage(body_id);
             }
         }
     }
@@ -370,10 +368,6 @@ void OscSender::shutdown() {
 
 bool OscSender::sendAliveMessage(int body_id, int alive_value) {
     return sendIntMessage("/skeleton/" + std::to_string(body_id) + "/" + standard_tag_ + "/alive", alive_value);
-}
-
-bool OscSender::sendIdMessage(int body_id) {
-    return sendIntMessage("/skeleton/" + std::to_string(body_id) + "/" + standard_tag_ + "/id", body_id);
 }
 
 bool OscSender::sendCachedBodyState(int body_id, const CachedBodyState& body_state, int alive_value) {
@@ -400,7 +394,7 @@ bool OscSender::sendBody(const sl::BodyData& body) {
 
 bool OscSender::sendBodyBundle(int body_id, int alive_value, const std::string& standard_tag, const std::vector<std::string>& joint_names, const std::vector<sl::float3>& keypoints) {
     const size_t max_message_size = 160;
-    const size_t buffer_size = 16 + (joint_names.size() + 2) * (4 + max_message_size);
+    const size_t buffer_size = 16 + (joint_names.size() + 1) * (4 + max_message_size);
     std::vector<uint8_t> buffer(buffer_size, 0);
 
     size_t offset = 0;
@@ -412,17 +406,6 @@ bool OscSender::sendBodyBundle(int body_id, int alive_value, const std::string& 
     message_offset = writePaddedString(message.data(), message_offset, "/skeleton/" + std::to_string(body_id) + "/" + standard_tag + "/alive");
     message_offset = writePaddedString(message.data(), message_offset, ",i");
     writeUint32BE(message.data() + message_offset, static_cast<uint32_t>(alive_value));
-    message_offset += 4;
-    writeUint32BE(buffer.data() + offset, static_cast<uint32_t>(message_offset));
-    offset += 4;
-    std::memcpy(buffer.data() + offset, message.data(), message_offset);
-    offset += message_offset;
-
-    message.fill(0);
-    message_offset = 0;
-    message_offset = writePaddedString(message.data(), message_offset, "/skeleton/" + std::to_string(body_id) + "/" + standard_tag + "/id");
-    message_offset = writePaddedString(message.data(), message_offset, ",i");
-    writeUint32BE(message.data() + message_offset, static_cast<uint32_t>(body_id));
     message_offset += 4;
     writeUint32BE(buffer.data() + offset, static_cast<uint32_t>(message_offset));
     offset += 4;
@@ -455,8 +438,6 @@ bool OscSender::sendBodyBundle(int body_id, int alive_value, const std::string& 
 
 bool OscSender::sendBodyPerJoint(int body_id, int alive_value, const std::string& standard_tag, const std::vector<std::string>& joint_names, const std::vector<sl::float3>& keypoints) {
     if (!sendIntMessage("/skeleton/" + std::to_string(body_id) + "/" + standard_tag + "/alive", alive_value))
-        return false;
-    if (!sendIntMessage("/skeleton/" + std::to_string(body_id) + "/" + standard_tag + "/id", body_id))
         return false;
 
     std::array<uint8_t, 160> buffer {};

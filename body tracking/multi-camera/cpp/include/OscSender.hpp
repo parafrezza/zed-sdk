@@ -46,7 +46,6 @@ private:
 
     bool sendIntMessage(const std::string& address, int value);
     bool sendAliveMessage(int body_id, int alive_value);
-    bool sendIdMessage(int body_id);
     bool sendCachedBodyState(int body_id, const CachedBodyState& body_state, int alive_value);
     bool sendBody(const sl::BodyData& body);
     bool sendBodyBundle(int body_id, int alive_value, const std::string& standard_tag, const std::vector<std::string>& joint_names, const std::vector<sl::float3>& keypoints);

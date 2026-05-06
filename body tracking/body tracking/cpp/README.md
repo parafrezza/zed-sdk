@@ -73,3 +73,5 @@ If you need assistance go to our Community site at https://community.stereolabs.
 - `15`: `left_eye`
 - `16`: `right_ear`
 - `17`: `left_ear`
+- `18`: `alive`
+- `19`: `id`
