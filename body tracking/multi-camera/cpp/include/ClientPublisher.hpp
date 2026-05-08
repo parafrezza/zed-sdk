@@ -9,6 +9,17 @@
 #include <thread>
 #include <condition_variable>
 
+struct CameraOpenDiagnostic {
+    std::string stage;
+    sl::ERROR_CODE error_code = sl::ERROR_CODE::SUCCESS;
+};
+
+struct CameraRuntimeHealth {
+    bool healthy = false;
+    int consecutive_grab_failures = 0;
+    sl::ERROR_CODE last_grab_error = sl::ERROR_CODE::SUCCESS;
+};
+
 struct Trigger {
 
     void notifyZED() {
@@ -41,19 +52,24 @@ public:
     ClientPublisher();
     ~ClientPublisher();
 
-    bool open(sl::InputType, Trigger* ref, int sdk_gpu_id, const PublisherConfig& config);
+    bool open(sl::InputType, Trigger* ref, int sdk_gpu_id, const PublisherConfig& config, CameraOpenDiagnostic* diagnostic = nullptr);
+    static bool probe(const sl::InputType& input, int sdk_gpu_id, const PublisherConfig& config, CameraOpenDiagnostic& diagnostic);
     void start();
     void stop();
     void setStartSVOPosition(unsigned pos);
+    bool isOpened() const;
+    CameraRuntimeHealth getRuntimeHealth() const;
 
 private:
     sl::Camera zed;
     void work();
     std::thread runner;
-    int serial;
+    int serial = 0;
     std::mutex mtx;
-    Trigger* p_trigger;
+    mutable std::mutex health_mtx;
+    Trigger* p_trigger = nullptr;
     PublisherConfig config_;
+    CameraRuntimeHealth runtime_health_;
 };
 
 #endif // ! __SENDER_RUNNER_HDR__

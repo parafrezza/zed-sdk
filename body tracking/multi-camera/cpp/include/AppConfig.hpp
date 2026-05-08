@@ -30,6 +30,7 @@ struct PublisherConfig {
     int runtime_detection_confidence = 40;
     float runtime_skeleton_smoothing = 0.4f;
     int grab_confidence_threshold = 50;
+    int watchdog_grab_failure_threshold = 5;
 };
 
 struct FusionConfig {
@@ -61,6 +62,15 @@ struct OscConfig {
     std::string log_file;
 };
 
+struct StartupConfig {
+    int initial_attempts = 3;
+    int retry_interval_seconds = 3;
+    int recovery_initial_interval_seconds = 3;
+    int recovery_backoff_factor = 3;
+    int recovery_max_interval_seconds = 81;
+    bool restart_on_recovered_camera = true;
+};
+
 struct AppConfig {
     std::string calibration_file;
     bool verbose_logging = true;
@@ -68,6 +78,7 @@ struct AppConfig {
     FusionConfig fusion;
     PreviewConfig preview;
     OscConfig osc;
+    StartupConfig startup;
 };
 
 struct FileSearchResult {

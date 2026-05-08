@@ -166,6 +166,8 @@ bool applyConfigValue(const std::string& section, const std::string& key, const 
         return parseFloat(value, config.publisher.runtime_skeleton_smoothing);
     if (full_key == "publisher.grab_confidence_threshold")
         return parseInt(value, config.publisher.grab_confidence_threshold);
+    if (full_key == "publisher.watchdog_grab_failure_threshold")
+        return parseInt(value, config.publisher.watchdog_grab_failure_threshold);
     if (full_key == "fusion.coordinate_system")
         return parseCoordinateSystem(value, config.fusion.coordinate_system);
     if (full_key == "fusion.coordinate_units")
@@ -210,6 +212,18 @@ bool applyConfigValue(const std::string& section, const std::string& key, const 
         config.osc.log_file = trim(value);
         return true;
     }
+    if (full_key == "startup.initial_attempts")
+        return parseInt(value, config.startup.initial_attempts);
+    if (full_key == "startup.retry_interval_seconds")
+        return parseInt(value, config.startup.retry_interval_seconds);
+    if (full_key == "startup.recovery_initial_interval_seconds")
+        return parseInt(value, config.startup.recovery_initial_interval_seconds);
+    if (full_key == "startup.recovery_backoff_factor")
+        return parseInt(value, config.startup.recovery_backoff_factor);
+    if (full_key == "startup.recovery_max_interval_seconds")
+        return parseInt(value, config.startup.recovery_max_interval_seconds);
+    if (full_key == "startup.restart_on_recovered_camera")
+        return parseBool(value, config.startup.restart_on_recovered_camera);
 
     return true;
 }
