@@ -1,0 +1,19 @@
+{
+  "app_executable": "C:\\Users\\extra\\Desktop\\repos\\zed-sdk\\body tracking\\multi-camera\\cpp\\build\\Release\\ZED_BodyFusion.exe",
+  "app_args": [],
+  "app_working_dir": "C:\\Users\\extra\\Desktop\\repos\\zed-sdk\\body tracking\\multi-camera\\cpp\\build\\Release",
+  "autostart": true,
+  "auto_restart": true,
+  "restart_delay_seconds": 5,
+  "stop_grace_seconds": 8,
+  "bind_host": "127.0.0.1",
+  "tcp_port": 8765,
+  "udp_port": 8765,
+  "auth_token": "",
+  "auth_required_for_health": false,
+  "require_elevation_for_system_commands": true,
+  "wake_macs": [],
+  "wake_broadcast": "255.255.255.255",
+  "wake_port": 9,
+  "log_dir": "logs"
+}
